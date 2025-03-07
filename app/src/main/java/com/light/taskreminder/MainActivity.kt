@@ -1,17 +1,27 @@
 package com.light.taskreminder
 
-import android.app.PendingIntent
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.ListView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
+import androidx.core.content.edit
+import androidx.work.OneTimeWorkRequestBuilder
 
 class MainActivity : AppCompatActivity() {
     private lateinit var listView: ListView
@@ -43,35 +53,57 @@ class MainActivity : AppCompatActivity() {
         if (!permPref.getBoolean("granted", false)) {
             requestAutoStartPermission(this)
         }
+        createNotificationChannel()
         scheduleDailyNotification()
-    }
-    private fun scheduleDailyNotification() {
-        val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-        val intent = Intent(this, TaskReminderReceiver::class.java)
 
-        // Check if the alarm is already set
-        val existingIntent = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)
-        if (existingIntent != null) {
-            return
+    }
+    private fun createNotificationChannel() {
+        val channelId = "TASK_REMINDER_CHANNEL"
+        val channelName = "Task Reminder"
+        val channel = NotificationChannel(
+            channelId,
+            channelName,
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Reminders for daily tasks"
         }
 
-        val pendingIntent = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.createNotificationChannel(channel)
+    }
 
-        val calendar = java.util.Calendar.getInstance().apply {
+    private fun scheduleDailyNotification() {
+        val workManager = WorkManager.getInstance(this)
+
+        val constraints = Constraints.Builder().build()
+
+
+        val dailyWorkRequest = PeriodicWorkRequestBuilder<TaskReminderWorker>(1, TimeUnit.DAYS)
+            .setConstraints(constraints)
+            .setInitialDelay(calculateInitialDelay(), TimeUnit.MILLISECONDS)
+            .build()
+
+        Log.d("WorkManagerDebug", "Scheduling daily notification work request")
+
+        workManager.enqueueUniquePeriodicWork(
+            "daily_task_reminder",
+            ExistingPeriodicWorkPolicy.REPLACE,
+            dailyWorkRequest
+        )
+    }
+
+
+    private fun calculateInitialDelay(): Long {
+        val now = java.util.Calendar.getInstance()
+        val target = java.util.Calendar.getInstance().apply {
             set(java.util.Calendar.HOUR_OF_DAY, 6)
             set(java.util.Calendar.MINUTE, 0)
             set(java.util.Calendar.SECOND, 0)
-            if (timeInMillis < System.currentTimeMillis()) {
-                add(java.util.Calendar.DAY_OF_YEAR, 1)
+            if (before(now)) {
+                add(java.util.Calendar.DAY_OF_YEAR, 1) // Schedule for next day if past 6 AM today
             }
         }
-
-        alarmManager.setRepeating(
-            android.app.AlarmManager.RTC_WAKEUP,
-            calendar.timeInMillis,
-            android.app.AlarmManager.INTERVAL_DAY,
-            pendingIntent
-        )
+        return target.timeInMillis - now.timeInMillis
     }
 
     private fun requestAutoStartPermission(context: Context) {
@@ -85,13 +117,13 @@ class MainActivity : AppCompatActivity() {
                     )
                 }
                 context.startActivity(intent)
-                val permPref: SharedPreferences = getSharedPreferences("permission", Context.MODE_PRIVATE)
-                permPref.edit().putBoolean("granted", true).apply()
+
+                val permPref: SharedPreferences = context.getSharedPreferences("permission", Context.MODE_PRIVATE)
+                permPref.edit { putBoolean("granted", true) }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
     }
-
 
 }

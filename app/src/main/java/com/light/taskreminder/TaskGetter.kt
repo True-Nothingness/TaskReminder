@@ -4,18 +4,20 @@ import android.content.ContentResolver
 import android.content.Context
 import android.database.Cursor
 import android.net.Uri
+import androidx.core.net.toUri
 
 class TaskGetter(private val context: Context) {
     companion object {
         private const val AUTHORITY = "com.light.todo.provider"
         private const val PATH = "tasks"
-        val CONTENT_URI: Uri = Uri.parse("content://$AUTHORITY/$PATH")
+        val CONTENT_URI: Uri = "content://$AUTHORITY/$PATH".toUri()
     }
 
 
     fun getTasksForToday(): List<String> {
         return getTasks("date = ?", arrayOf(getTodayDate())).map { it.first }
     }
+
 
     fun getAllTasks(): List<Pair<String, String>> {
         return getTasks(null, null)
@@ -44,7 +46,7 @@ class TaskGetter(private val context: Context) {
 
 
     private fun getTodayDate(): String {
-        val sdf = java.text.SimpleDateFormat("dd-MM-yyyy", java.util.Locale.getDefault())
+        val sdf = java.text.SimpleDateFormat("d/M/yyyy", java.util.Locale.getDefault())
         return sdf.format(java.util.Date())
     }
 }
